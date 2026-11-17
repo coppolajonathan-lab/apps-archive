@@ -3,5 +3,5 @@
 //   'https://campaign-forge.your-subdomain.workers.dev'
 // Leave it empty to fall back to "bring your own API key" mode.
 window.FORGE_CONFIG = {
-  proxyUrl: ''
+  proxyUrl: 'https://campaign-forge.coppolajonathan.workers.dev'
 };

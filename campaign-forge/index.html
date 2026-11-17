@@ -34,6 +34,9 @@
   dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 14px; max-width: 520px; width: 92vw; }
   dialog::backdrop { background: rgba(0,0,0,.6); }
   dialog label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 4px; }
+  .riddle { margin-top: 10px; background: var(--panel-2); border: 1px dashed color-mix(in srgb, var(--accent) 50%, transparent); border-radius: 10px; padding: 8px 12px; font-size: 14px; }
+  .riddle summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+  .riddle p { margin: 8px 0; }
   .welcome h2 { margin-top: 10px; }
   .cursor::after { content: "▍"; animation: blink 1s steps(2) infinite; color: var(--accent); }
   @keyframes blink { 50% { opacity: 0; } }
@@ -54,7 +57,7 @@
 
   <div id="log">
     <div class="welcome card" id="welcome">
-      <p style="margin-top:0">Pitch an idea in a sentence or a paragraph. You'll get back a starter kit: the hook, the threat, three paths forward, NPCs, and encounter seeds, plus a few questions to sharpen it.</p>
+      <p style="margin-top:0">Pitch an idea in a sentence or a paragraph. You'll get back a starter kit: the hook, the threat, three paths forward, NPCs, and encounter seeds, plus a few questions to sharpen it.</p><p class="small muted" style="margin:0 0 6px">🔐 To enter the forge, open <b>⚙ Settings</b> and solve the riddle for the passphrase.</p>
       <div class="chips" id="chips"></div>
     </div>
   </div>
@@ -78,7 +81,14 @@
     </select>
     <div id="passBox">
       <label for="pass">Passphrase</label>
-      <input class="field" id="pass" type="password" placeholder="Ask your GM" autocomplete="off">
+      <input class="field" id="pass" type="text" placeholder="Solve the riddle…" autocomplete="off" spellcheck="false">
+      <details class="riddle">
+        <summary>📜 A riddle carved above the door</summary>
+        <p><i>Three words spoken as one breath. No gaps between them, and each word stands tall at its start.</i></p>
+        <p>The first two are the battle-cry of any party that walks in together: two short words that declare who stands here.</p>
+        <p>The third is what the bards call those who charge when fear says flee. It rhymes with <i>gallant</i>, and a certain comic-strip prince wore it as his name.</p>
+        <p class="small muted">Speak it as the party would, about themselves.</p>
+      </details>
     </div>
     <div id="keyBox">
       <label for="apiKey">Anthropic API key</label>
@@ -167,7 +177,7 @@ function syncSettingsUI() {
   const c = $('conn').value;
   $('passBox').style.display = c === 'proxy' ? '' : 'none';
   $('keyBox').style.display = c === 'own' ? '' : 'none';
-  $('connHelp').textContent = c === 'proxy' ? 'Your GM shares the passphrase. Usage is billed to their account, so keep it within the table.' : 'Get a key at console.anthropic.com. Usage is billed to that key\'s account.';
+  $('connHelp').textContent = c === 'proxy' ? 'Solve the riddle or ask the GM. Usage is billed to Jonathan\'s account, so please forge responsibly.' : 'Get a key at console.anthropic.com. Usage is billed to that key\'s account.';
 }
 if (!PROXY) $('conn').querySelector('option[value="proxy"]').disabled = true;
 $('conn').onchange = syncSettingsUI;
@@ -216,7 +226,7 @@ async function send(text) {
     history.push({ role: 'assistant', content: acc });
   } catch (e) {
     history.pop();
-    out.classList.add('err'); out.innerHTML = `Couldn't reach Claude: ${esc(e.message)}. Check the ${conn === 'proxy' ? 'passphrase' : 'API key'} and model in Settings.`;
+    out.classList.add('err'); out.innerHTML = /passphrase/i.test(e.message) ? `🚪 The door stays shut: that isn't the passphrase. Check the riddle in Settings, and mind the capitals and spaces.` : `Couldn't reach Claude: ${esc(e.message)}. Check the ${conn === 'proxy' ? 'passphrase' : 'API key'} and model in Settings.`;
   } finally {
     out.classList.remove('cursor'); busy = false; $('send').disabled = false; $('input').focus();
   }
@@ -226,7 +236,7 @@ $('form').onsubmit = e => { e.preventDefault(); const t = $('input').value; $('i
 $('input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('form').requestSubmit(); } });
 $('input').addEventListener('input', e => { e.target.style.height = 'auto'; e.target.style.height = Math.min(200, e.target.scrollHeight) + 'px'; });
 document.querySelectorAll('.seg button').forEach(b => b.onclick = () => { if (history.length && b.dataset.mode !== mode && !confirm('Switching systems starts a new campaign. Continue?')) return; if (b.dataset.mode !== mode) { history = []; resetLog(); } setMode(b.dataset.mode); });
-function resetLog() { $('log').innerHTML = `<div class="welcome card" id="welcome"><p style="margin-top:0">Pitch an idea in a sentence or a paragraph. You'll get back a starter kit: the hook, the threat, three paths forward, NPCs, and encounter seeds, plus a few questions to sharpen it.</p><div class="chips" id="chips"></div></div>`; setMode(mode); }
+function resetLog() { $('log').innerHTML = `<div class="welcome card" id="welcome"><p style="margin-top:0">Pitch an idea in a sentence or a paragraph. You'll get back a starter kit: the hook, the threat, three paths forward, NPCs, and encounter seeds, plus a few questions to sharpen it.</p><p class="small muted" style="margin:0 0 6px">🔐 To enter the forge, open <b>⚙ Settings</b> and solve the riddle for the passphrase.</p><div class="chips" id="chips"></div></div>`; setMode(mode); }
 $('newChat').onclick = () => { history = []; resetLog(); };
 $('openSettings').onclick = () => { $('conn').value = conn; $('pass').value = pass; $('apiKey').value = apiKey; $('model').value = model; syncSettingsUI(); $('settings').showModal(); };
 $('settings').addEventListener('close', () => {
