@@ -64,23 +64,34 @@
       <textarea class="field" id="input" placeholder="e.g. A heist in a floating city where the vault is a sleeping god…" rows="2"></textarea>
       <button class="btn" id="send" type="submit">Forge</button>
     </form>
-    <p class="small muted" style="margin:8px 2px 0">Runs on Claude through your own Anthropic API key, which stays in this browser and is sent only to api.anthropic.com.</p>
+    <p class="small muted" style="margin:8px 2px 0" id="footNote"></p>
   </div>
 </div>
 
 <dialog id="settings">
   <form method="dialog">
     <h2 style="margin-top:0">Settings</h2>
-    <label for="apiKey">Anthropic API key</label>
-    <input class="field" id="apiKey" type="password" placeholder="sk-ant-…" autocomplete="off">
+    <label for="conn">Connection</label>
+    <select class="field" id="conn">
+      <option value="proxy">Table passphrase (uses Jonathan's key)</option>
+      <option value="own">My own Anthropic API key</option>
+    </select>
+    <div id="passBox">
+      <label for="pass">Passphrase</label>
+      <input class="field" id="pass" type="password" placeholder="Ask your GM" autocomplete="off">
+    </div>
+    <div id="keyBox">
+      <label for="apiKey">Anthropic API key</label>
+      <input class="field" id="apiKey" type="password" placeholder="sk-ant-…" autocomplete="off">
+    </div>
     <label for="model">Model</label>
     <select class="field" id="model">
       <option value="claude-sonnet-5-5">Claude Sonnet 5.5 (fast, great default)</option>
       <option value="claude-opus-5-5">Claude Opus 5.5 (deepest)</option>
       <option value="claude-haiku-5-5">Claude Haiku 5.5 (quickest)</option>
     </select>
-    <label><input type="checkbox" id="remember" checked> Remember the key in this browser</label>
-    <p class="small muted">Get a key at console.anthropic.com. Usage is billed to that key's account.</p>
+    <label><input type="checkbox" id="remember" checked> Remember this in this browser</label>
+    <p class="small muted" id="connHelp"></p>
     <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:14px">
       <button class="btn ghost" value="cancel">Cancel</button>
       <button class="btn" id="saveSettings" value="save">Save</button>
@@ -88,6 +99,7 @@
   </form>
 </dialog>
 
+<script src="config.js"></script>
 <script src="prompts.js"></script>
 <script>
 const $ = id => document.getElementById(id);
@@ -95,6 +107,9 @@ const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
   set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} }
 };
+const PROXY = ((window.FORGE_CONFIG || {}).proxyUrl || '').replace(/\/+$/, '');
+let conn = PROXY ? (store.get('forge.conn') || 'proxy') : 'own';
+let pass = store.get('forge.pass') || '';
 let apiKey = store.get('forge.key') || '';
 let model = store.get('forge.model') || 'claude-sonnet-5-5';
 let mode = store.get('forge.mode') || 'dnd';
@@ -141,7 +156,21 @@ function setMode(m) {
   $('chips').querySelectorAll('.chip').forEach(c => c.onclick = () => { $('input').value = c.textContent; $('input').focus(); });
   $('input').placeholder = m === 'dcc' ? 'e.g. A Neighborhood where every Mob is a cursed mall mascot…' : 'e.g. A heist in a floating city where the vault is a sleeping god…';
 }
-function keyState() { $('keyState').textContent = apiKey ? `${model} · key set` : 'No API key: open Settings'; }
+const ready = () => conn === 'proxy' ? !!pass : !!apiKey;
+function keyState() {
+  $('keyState').textContent = ready() ? `${model} · ${conn === 'proxy' ? 'passphrase set' : 'own key set'}` : (conn === 'proxy' ? 'Enter the passphrase in Settings' : 'No API key: open Settings');
+  $('footNote').textContent = conn === 'proxy'
+    ? 'Runs on Claude through Jonathan\'s account via a private proxy. You only need the table passphrase.'
+    : 'Runs on Claude through your own Anthropic API key, which stays in this browser and is sent only to api.anthropic.com.';
+}
+function syncSettingsUI() {
+  const c = $('conn').value;
+  $('passBox').style.display = c === 'proxy' ? '' : 'none';
+  $('keyBox').style.display = c === 'own' ? '' : 'none';
+  $('connHelp').textContent = c === 'proxy' ? 'Your GM shares the passphrase. Usage is billed to their account, so keep it within the table.' : 'Get a key at console.anthropic.com. Usage is billed to that key\'s account.';
+}
+if (!PROXY) $('conn').querySelector('option[value="proxy"]').disabled = true;
+$('conn').onchange = syncSettingsUI;
 function bubble(role, html, cls = '') {
   const d = document.createElement('div'); d.className = `msg ${role} ${cls}`; d.innerHTML = html;
   $('log').appendChild(d); d.scrollIntoView({ block: 'end', behavior: 'smooth' }); return d;
@@ -149,21 +178,24 @@ function bubble(role, html, cls = '') {
 
 async function send(text) {
   if (busy || !text.trim()) return;
-  if (!apiKey) { $('settings').showModal(); return; }
+  if (!ready()) { $('openSettings').click(); return; }
   $('welcome')?.remove();
   busy = true; $('send').disabled = true;
   history.push({ role: 'user', content: text });
   bubble('user', md(text));
   const out = bubble('bot', '', 'cursor'); let acc = '';
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const viaProxy = conn === 'proxy';
+    const res = await fetch(viaProxy ? `${PROXY}/v1/messages` : 'https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
+      headers: viaProxy
+        ? { 'content-type': 'application/json', 'x-forge-pass': pass }
+        : {
+            'content-type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true'
+          },
       body: JSON.stringify({ model, max_tokens: 4096, stream: true, system: window.FORGE_PROMPTS[mode], messages: history })
     });
     if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error?.message || `HTTP ${res.status}`); }
@@ -184,7 +216,7 @@ async function send(text) {
     history.push({ role: 'assistant', content: acc });
   } catch (e) {
     history.pop();
-    out.classList.add('err'); out.innerHTML = `Couldn't reach Claude: ${esc(e.message)}. Check the API key and model in Settings.`;
+    out.classList.add('err'); out.innerHTML = `Couldn't reach Claude: ${esc(e.message)}. Check the ${conn === 'proxy' ? 'passphrase' : 'API key'} and model in Settings.`;
   } finally {
     out.classList.remove('cursor'); busy = false; $('send').disabled = false; $('input').focus();
   }
@@ -196,11 +228,14 @@ $('input').addEventListener('input', e => { e.target.style.height = 'auto'; e.ta
 document.querySelectorAll('.seg button').forEach(b => b.onclick = () => { if (history.length && b.dataset.mode !== mode && !confirm('Switching systems starts a new campaign. Continue?')) return; if (b.dataset.mode !== mode) { history = []; resetLog(); } setMode(b.dataset.mode); });
 function resetLog() { $('log').innerHTML = `<div class="welcome card" id="welcome"><p style="margin-top:0">Pitch an idea in a sentence or a paragraph. You'll get back a starter kit: the hook, the threat, three paths forward, NPCs, and encounter seeds, plus a few questions to sharpen it.</p><div class="chips" id="chips"></div></div>`; setMode(mode); }
 $('newChat').onclick = () => { history = []; resetLog(); };
-$('openSettings').onclick = () => { $('apiKey').value = apiKey; $('model').value = model; $('settings').showModal(); };
+$('openSettings').onclick = () => { $('conn').value = conn; $('pass').value = pass; $('apiKey').value = apiKey; $('model').value = model; syncSettingsUI(); $('settings').showModal(); };
 $('settings').addEventListener('close', () => {
   if ($('settings').returnValue !== 'save') return;
-  apiKey = $('apiKey').value.trim(); model = $('model').value;
-  store.set('forge.key', $('remember').checked ? apiKey : null); store.set('forge.model', model); keyState();
+  conn = $('conn').value; pass = $('pass').value.trim(); apiKey = $('apiKey').value.trim(); model = $('model').value;
+  const keep = $('remember').checked;
+  store.set('forge.conn', conn); store.set('forge.model', model);
+  store.set('forge.pass', keep && pass ? pass : null); store.set('forge.key', keep && apiKey ? apiKey : null);
+  keyState();
 });
 setMode(mode); keyState();
 </script>
