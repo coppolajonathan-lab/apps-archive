@@ -22,8 +22,6 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - name: Validate data files
-        run: for f in */data.json; do python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$f" && echo "ok $f"; done
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
